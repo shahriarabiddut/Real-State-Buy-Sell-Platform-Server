@@ -7,13 +7,6 @@ const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 const secret = process.env.JWTSECRET || 'secret';
 
-// Middleware
-// app.use(cors({
-//   origin: [
-//     "http://localhost:5173",
-//   ], 
-//   credentials: true,
-// }));
 app.use(express.json());
 
 // Database
@@ -56,7 +49,7 @@ run().catch(console.dir);
 // MongoDB Ends
 
 // Initial Setup
-app.get('/', (req,res)=>{res.send(`PHA12 Server is Running!`)})
+app.get('/', (req,res)=>{res.send(`PHRealState Server is Running!`)})
 app.listen(port, ()=>{
-    console.log(`PHA12 Server is Running on Port : ${port} and Secret : ${secret}`);
+    console.log(`PHRealState Server is Running on Port : ${port} and Secret : ${secret}`);
 })
