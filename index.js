@@ -35,17 +35,69 @@ async function run() {
   try {
     // DB Collections
     const usersCollection = client.db(dbName).collection("users");
+    // JWT RELATED API
+    app.post('/jwt',async (req,res)=>{
+        const user = req.body;
+        const token = jwt.sign(user,secret,{expiresIn: '2h'})
+        res.send({token});
+    })
+    // MiddleWares : Verify Token
+    const verifyToken = (req,res,next)=>{
+      console.log('Inside Verify token : ',req.headers.authorization);
+      if(!req.headers.authorization){
+        return res.status(401).send({message:'Unauthorized Access!'})
+      }
+      const token = req.headers.authorization.split(' ')[1];
+      // if(!token){
+      //   return res.status(401).send({message:'Unauthorized Access!'})
+      // }
+      jwt.verify(token,secret,(error,decoded)=>{
+        if(error){
+          return res.status(401).send({message:'Unauthorized Access!'})
+        }
+        req.decoded = decoded;
+        next();
+      })
+    }
     // User Routes
+    // Get User Data that role is ADMIN or NOT
+    app.get('/user/admin/:email',verifyToken,async (req,res)=>{
+      let admin = false;
+      const email = req.params.email;
+      if(email !== req.decoded.email){
+        return res.status(403).send({message:'Forbidden Access!'})
+      }
+      const filter = { email };
+      const user = await usersCollection.findOne(filter);
+      if(user){
+        admin = user?.role === 'admin';
+      }
+      res.send({admin});
+    })
+    // Get User Data that role is User or Agent or notMentioned
+    app.get('/user/role/:email',verifyToken,async (req,res)=>{
+      let role = 'notMentioned';
+      const email = req.params.email;
+      if(email !== req.decoded.email){
+        return res.status(403).send({message:'Forbidden Access!'})
+      }
+      const filter = { email };
+      const user = await usersCollection.findOne(filter);
+      if(user){
+        role = user?.role;
+      }
+      res.send({role});
+    })
     // Get User Data
-      app.get('/user/:email', async (req,res)=>{
+      app.get('/user/:email',verifyToken, async (req,res)=>{
         const email = req.params.email;
         const query = {email}
         const result = await usersCollection.findOne(query);
-        console.log('User Found!')
+        console.log('User Found!',result)
         res.send(result);
       })
       //Get All Users
-      app.get('/users', async(req,res)=>{
+      app.get('/users',verifyToken, async(req,res)=>{
           const result = await usersCollection.find().toArray();
           console.log(`All Users Fetched!`);
           res.send(result);
@@ -83,8 +135,8 @@ async function run() {
       console.log('Updated Info of User',updatedUserInfo.$set);
       res.send(result);
       })
-      // Update User ROle For Social Login
-      app.patch('/userRole',async (req,res)=>{
+      // Update User Role For Social Login
+      app.patch('/userRole',verifyToken,async (req,res)=>{
       const { email, role,updatedAt } = req.body;
       // Allready have a role or not
       const query = {email}
@@ -122,5 +174,6 @@ run().catch(console.dir);
 // Initial Setup
 app.get('/', (req,res)=>{res.send(`PHRealState Server is Running!`)})
 app.listen(port, ()=>{
-    console.log(`PHRealState Server is Running on Port : ${port} and Secret : ${secret}`);
+    console.log(`PHRealState Server is Running on Port : ${port} `);
+    // console.log(`PHRealState Server is Running on Port : ${port} and Secret : ${secret}`);
 })
