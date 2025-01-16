@@ -59,6 +59,42 @@ async function run() {
         next();
       })
     }
+    //MiddleWares: Verfy Admin after Verify Token
+    const verifyAdmin = async (req,res,next)=>{
+      const email = req.decoded.email;
+      // console.log('Inside Admin Verify token : ',email);
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      const isAdmin = user?.role === 'admin';
+      if(!isAdmin){
+        return res.status(403).send({message:'Forbidden Access!'})
+      }
+      next();
+    }
+    //MiddleWares: Verfy User after Verify Token
+    const verifyUser = async (req,res,next)=>{
+      const email = req.decoded.email;
+      // console.log('Inside User Verify token : ',email);
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      const isRole = user?.role === 'user';
+      if(!isRole){
+        return res.status(403).send({message:'Forbidden Access!'})
+      }
+      next();
+    }
+    //MiddleWares: Verfy Agent after Verify Token
+    const verifyAgent = async (req,res,next)=>{
+      const email = req.decoded.email;
+      // console.log('Inside Agent Verify token : ',email);
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      const isRole = user?.role === 'agent';
+      if(!isRole){
+        return res.status(403).send({message:'Forbidden Access!'})
+      }
+      next();
+    }
     // User Routes
     // Get User Data that role is ADMIN or NOT
     app.get('/user/admin/:email',verifyToken,async (req,res)=>{
@@ -91,6 +127,9 @@ async function run() {
     // Get User Data
       app.get('/user/:email',verifyToken, async (req,res)=>{
         const email = req.params.email;
+        if(email !== req.decoded.email){
+          return res.status(403).send({message:'Forbidden Access!'})
+        }
         const query = {email}
         const result = await usersCollection.findOne(query);
         console.log('User Found!',result)
@@ -115,7 +154,25 @@ async function run() {
       })
       // Update Login info Using Patch
       app.patch('/users',async (req,res)=>{
-      const {  lastSignInTime,email, name,photo } = req.body;
+      const {  lastSignInTime,email } = req.body;
+      const filter = { email };
+      const updatedUserInfo = {
+        $set: {}
+      };
+      if (lastSignInTime) {
+        updatedUserInfo.$set.lastSignInTime = lastSignInTime;
+      }
+      //
+      const result = await usersCollection.updateOne(filter,updatedUserInfo);
+      console.log('Updated Info of User',updatedUserInfo.$set);
+      res.send(result);
+      })
+      // Update User Profile
+      app.patch('/user',verifyToken,async (req,res)=>{
+      const {  updatedAt,email, name,photo,bio } = req.body;
+      if(email !== req.decoded.email){
+        return res.status(403).send({message:'Forbidden Access!'})
+      }
       const filter = { email };
       const updatedUserInfo = {
         $set: {}
@@ -127,8 +184,11 @@ async function run() {
       if (photo) {
         updatedUserInfo.$set.photo = photo;
       }
-      if (lastSignInTime) {
-        updatedUserInfo.$set.lastSignInTime = lastSignInTime;
+      if (updatedAt) {
+        updatedUserInfo.$set.updatedAt = updatedAt;
+      }
+      if (bio) {
+        updatedUserInfo.$set.bio = bio;
       }
       //
       const result = await usersCollection.updateOne(filter,updatedUserInfo);
@@ -160,6 +220,26 @@ async function run() {
         }
       // 
       
+      })
+      // Change Role : Only Admin 
+      app.patch('/users/role/:id', verifyToken, verifyAdmin, async (req,res)=>{
+        const id = req.params.id;
+        const { role } = req.body;
+        const filter = {_id : new ObjectId(id)}
+        const updatedUserInfo = {
+          $set: {role}
+        };
+        const result = await usersCollection.updateOne(filter,updatedUserInfo);
+        console.log(`Updated User to ${role}`);
+        res.send(result);
+      })
+      // Delete User
+      app.delete('/users/:id', verifyToken, verifyAdmin, async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id)}
+        const result = await usersCollection.deleteOne(query);
+        console.log('User deleted!')
+        res.send(result);
       })
     // console.log("MongodB Pinged!");
     
