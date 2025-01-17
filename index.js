@@ -277,7 +277,7 @@ async function run() {
         const count = await propertiesCollection.countDocuments(filter);
         res.send({result,count});
       })
-      app.get('/properties',verifyToken, async (req,res)=>{
+      app.get('/properties', async (req,res)=>{
           const result = await propertiesCollection.find().toArray();
           res.send(result);
       })
@@ -291,7 +291,7 @@ async function run() {
         res.send(result);
       })
       // Get Property For Edit
-      app.get('/propertyEdit/:id',verifyToken,verifyAgent,async (req,res)=>{
+      app.get('/propertyEdit/:id',async (req,res)=>{
         const id = req.params.id;
         const query = {_id : new ObjectId(id),status: { $ne: "rejected" }}
         const result = await propertiesCollection.findOne(query);
@@ -315,7 +315,7 @@ async function run() {
         const id = req.params.id;
         const property = req.body;
         const filter = {_id : new ObjectId(id)}
-        const updatedUserInfo = {
+        const updatedProperty = {
           $set: {
             title:property.title,
             location:property.location,
@@ -325,8 +325,23 @@ async function run() {
             area:property.area,
           }
         };
-        const result = await propertiesCollection.updateOne(filter,updatedUserInfo);
+        const result = await propertiesCollection.updateOne(filter,updatedProperty);
         console.log(`Updated Property ${id}`);
+        res.send(result);
+      })
+      // Verify Property
+      app.patch('/propertyCheck',verifyToken,verifyAdmin,async (req,res)=>{
+        const pro = req.body;
+        const id = pro.id;
+        const check = pro.check;
+        const query = {_id : new ObjectId(id),status: { $ne: "rejected" }}
+        const updatedProperty = {
+          $set: {
+            status:check,
+          }
+        };
+        const result = await propertiesCollection.updateOne(query,updatedProperty);
+        console.log('Property Checked : ',id);
         res.send(result);
       })
       // Delete Property
