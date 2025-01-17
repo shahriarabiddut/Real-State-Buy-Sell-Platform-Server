@@ -138,7 +138,7 @@ async function run() {
         res.send(result);
       })
       //Get All Users
-      app.get('/users',verifyToken, async(req,res)=>{
+      app.get('/users', verifyToken,verifyAdmin, async(req,res)=>{
           const result = await usersCollection.find().toArray();
           console.log(`All Users Fetched!`);
           res.send(result);
@@ -244,23 +244,44 @@ async function run() {
         res.send(result);
       })
       // Property Routes
-      // Get All Property 
+      // Get All Properies
       app.get('/property',async (req,res)=>{
-          const result = await propertiesCollection.find().toArray();
-          const sanitizedResult = result.map(({ deleteUrl, ...rest }) => rest);
-          res.send(sanitizedResult);
+        const email = req.query.email;
+        const page = parseInt(req.query.page) || 0; 
+        const size = parseInt(req.query.size) || 12; 
+        const search = req.query.search || '';
+        let filter = {};
+        if (search.trim() !== '') {
+          filter.location = { $regex: search, $options: 'i' };
+        }
+        if (email !== '') {
+          filter.agentEmail = email;
+        }
+        const result = await propertiesCollection.aggregate([
+                          {
+                            $match: filter 
+                          },
+                          {
+                            $lookup: {
+                              from: "users",localField: "agentEmail",foreignField: "email",as: "agent" 
+                            }
+                          }, {$unwind:'$agent'},
+                          {
+                            $project: {
+                              _id: 1,title: 1,location: 1,image: 1,minPrice: 1,maxPrice: 1,area: 1,status: 1,agentEmail: 1,agentName: 1,
+                              "agent.photo": 1 
+                            }
+                          }
+                        ]).skip(page * size).limit(size).sort({ _id: -1 }).toArray();
+        // For Pagination 
+        const count = await propertiesCollection.countDocuments(filter);
+        res.send({result,count});
       })
       app.get('/properties',verifyToken, async (req,res)=>{
           const result = await propertiesCollection.find().toArray();
           res.send(result);
       })
-      // Get User Properies
-      app.get('/myproperty',async (req,res)=>{
-        const email = req.query.email;
-        const query = {agentEmail:email}
-        const result = await propertiesCollection.find(query).toArray();
-        res.send(result);
-      })
+      
       // Get Property
       app.get('/property/:id',async (req,res)=>{
         const id = req.params.id;
@@ -287,6 +308,25 @@ async function run() {
         const property = {...item,status:'pending',flag:0,advertisement:0}
         const result = await propertiesCollection.insertOne(property);
         console.log('New Property Added!');
+        res.send(result);
+      })
+      // Update Propety
+      app.patch('/property/:id', verifyToken, verifyAgent, async (req,res)=>{
+        const id = req.params.id;
+        const property = req.body;
+        const filter = {_id : new ObjectId(id)}
+        const updatedUserInfo = {
+          $set: {
+            title:property.title,
+            location:property.location,
+            image:property.image,
+            minPrice:property.minPrice,
+            maxPrice:property.maxPrice,
+            area:property.area,
+          }
+        };
+        const result = await propertiesCollection.updateOne(filter,updatedUserInfo);
+        console.log(`Updated Property ${id}`);
         res.send(result);
       })
       // Delete Property
