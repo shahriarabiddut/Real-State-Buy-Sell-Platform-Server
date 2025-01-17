@@ -254,12 +254,47 @@ async function run() {
           const result = await propertiesCollection.find().toArray();
           res.send(result);
       })
+      // Get User Properies
+      app.get('/myproperty',async (req,res)=>{
+        const email = req.query.email;
+        const query = {agentEmail:email}
+        const result = await propertiesCollection.find(query).toArray();
+        res.send(result);
+      })
+      // Get Property
+      app.get('/property/:id',async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id)}
+        const result = await propertiesCollection.findOne(query);
+        console.log('Property Found :',id);
+        res.send(result);
+      })
+      // Get Property For Edit
+      app.get('/propertyEdit/:id',verifyToken,verifyAgent,async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id),status: { $ne: "rejected" }}
+        const result = await propertiesCollection.findOne(query);
+        if (!result) {
+          console.log('Property not found or Rejected');
+          return res.status(404).send({ message: "Property not found or rejected." });
+        }
+        console.log('Property Found :',id);
+        res.send(result);
+      })
       // Add Property 
       app.post('/property',verifyToken,verifyAgent,async (req,res)=>{
         const item = req.body;
         const property = {...item,status:'pending',flag:0,advertisement:0}
         const result = await propertiesCollection.insertOne(property);
         console.log('New Property Added!');
+        res.send(result);
+      })
+      // Delete Property
+      app.delete('/property/:id',async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id)}
+        const result = await propertiesCollection.deleteOne(query);
+        console.log('Property deleted!')
         res.send(result);
       })
     // console.log("MongodB Pinged!");
