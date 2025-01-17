@@ -35,6 +35,7 @@ async function run() {
   try {
     // DB Collections
     const usersCollection = client.db(dbName).collection("users");
+    const propertiesCollection = client.db(dbName).collection("properties");
     // JWT RELATED API
     app.post('/jwt',async (req,res)=>{
         const user = req.body;
@@ -43,7 +44,8 @@ async function run() {
     })
     // MiddleWares : Verify Token
     const verifyToken = (req,res,next)=>{
-      console.log('Inside Verify token : ',req.headers.authorization);
+      console.log('Inside Verify token ');
+      // console.log('Inside Verify token : ',req.headers.authorization);
       if(!req.headers.authorization){
         return res.status(401).send({message:'Unauthorized Access!'})
       }
@@ -96,35 +98,35 @@ async function run() {
       next();
     }
     // User Routes
-    // Get User Data that role is ADMIN or NOT
-    app.get('/user/admin/:email',verifyToken,async (req,res)=>{
-      let admin = false;
-      const email = req.params.email;
-      if(email !== req.decoded.email){
-        return res.status(403).send({message:'Forbidden Access!'})
-      }
-      const filter = { email };
-      const user = await usersCollection.findOne(filter);
-      if(user){
-        admin = user?.role === 'admin';
-      }
-      res.send({admin});
-    })
-    // Get User Data that role is User or Agent or notMentioned
-    app.get('/user/role/:email',verifyToken,async (req,res)=>{
-      let role = 'notMentioned';
-      const email = req.params.email;
-      if(email !== req.decoded.email){
-        return res.status(403).send({message:'Forbidden Access!'})
-      }
-      const filter = { email };
-      const user = await usersCollection.findOne(filter);
-      if(user){
-        role = user?.role;
-      }
-      res.send({role});
-    })
-    // Get User Data
+      // Get User Data that role is ADMIN or NOT
+      app.get('/user/admin/:email',verifyToken,async (req,res)=>{
+        let admin = false;
+        const email = req.params.email;
+        if(email !== req.decoded.email){
+          return res.status(403).send({message:'Forbidden Access!'})
+        }
+        const filter = { email };
+        const user = await usersCollection.findOne(filter);
+        if(user){
+          admin = user?.role === 'admin';
+        }
+        res.send({admin});
+      })
+      // Get User Data that role is User or Agent or notMentioned
+      app.get('/user/role/:email',verifyToken,async (req,res)=>{
+        let role = 'notMentioned';
+        const email = req.params.email;
+        if(email !== req.decoded.email){
+          return res.status(403).send({message:'Forbidden Access!'})
+        }
+        const filter = { email };
+        const user = await usersCollection.findOne(filter);
+        if(user){
+          role = user?.role;
+        }
+        res.send({role});
+      })
+      // Get User Data
       app.get('/user/:email',verifyToken, async (req,res)=>{
         const email = req.params.email;
         if(email !== req.decoded.email){
@@ -239,6 +241,25 @@ async function run() {
         const query = {_id : new ObjectId(id)}
         const result = await usersCollection.deleteOne(query);
         console.log('User deleted!')
+        res.send(result);
+      })
+      // Property Routes
+      // Get All Property 
+      app.get('/property',async (req,res)=>{
+          const result = await propertiesCollection.find().toArray();
+          const sanitizedResult = result.map(({ deleteUrl, ...rest }) => rest);
+          res.send(sanitizedResult);
+      })
+      app.get('/properties',verifyToken, async (req,res)=>{
+          const result = await propertiesCollection.find().toArray();
+          res.send(result);
+      })
+      // Add Property 
+      app.post('/property',verifyToken,verifyAgent,async (req,res)=>{
+        const item = req.body;
+        const property = {...item,status:'pending',flag:0,advertisement:0}
+        const result = await propertiesCollection.insertOne(property);
+        console.log('New Property Added!');
         res.send(result);
       })
     // console.log("MongodB Pinged!");
