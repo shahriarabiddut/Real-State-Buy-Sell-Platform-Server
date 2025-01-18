@@ -43,6 +43,7 @@ async function run() {
     // DB Collections
     const usersCollection = client.db(dbName).collection("users");
     const propertiesCollection = client.db(dbName).collection("properties");
+    const wishlistCollection = client.db(dbName).collection("wishlist");
     // JWT RELATED API
     app.post('/jwt',async (req,res)=>{
         const user = req.body;
@@ -394,6 +395,66 @@ async function run() {
         console.log('Property deleted!')
         res.send(result);
       })
+
+      // WishList Routes
+      // Get All Wishlist
+      app.get('/wishlist',async (req,res)=>{
+        const email = req.query.email ;
+        const dashboard = req.query.dashboard ;
+        let query ={}
+        if(email!==''){
+          query.email = email;
+        }
+        let result = [];
+        const count = await wishlistCollection.countDocuments(query);
+        if(dashboard){
+          result = await wishlistCollection.aggregate([
+                        {
+                          $match: query, 
+                        },
+                        {
+                          $addFields: { 
+                            propertyId: { $toObjectId: "$propertyId" },
+                          },
+                        },
+                        {
+                          $lookup: {
+                            from: "properties", 
+                            localField: "propertyId", 
+                            foreignField: "_id",
+                            as: "propertyDetails", 
+                          },
+                        },
+                        {
+                          $unwind: "$propertyDetails", 
+                        },
+                         {
+                          $lookup: {
+                            from: "users", 
+                            localField: "propertyDetails.agentEmail", 
+                            foreignField: "email", 
+                            as: "propertyDetails.agent", 
+                          },
+                        },
+                        {
+                          $unwind: {
+                            path: "$propertyDetails.agent", 
+                            preserveNullAndEmptyArrays: true, 
+                          },
+                        },
+                      ]).toArray();
+        }else{
+          result = await wishlistCollection.find(query).toArray();
+          
+        }
+        res.send({result,count});
+      })
+      // Add To Wishlist
+      app.post('/wishlist',async (req,res)=>{
+      const wishlisted = req.body;
+      const result = await wishlistCollection.insertOne(wishlisted);
+      res.send(result);
+    })
     // console.log("MongodB Pinged!");
     
   } finally {
