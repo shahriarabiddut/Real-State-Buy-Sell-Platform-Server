@@ -44,6 +44,7 @@ async function run() {
     const usersCollection = client.db(dbName).collection("users");
     const propertiesCollection = client.db(dbName).collection("properties");
     const wishlistCollection = client.db(dbName).collection("wishlist");
+    const dealsCollection = client.db(dbName).collection("propertydeals");
     // JWT RELATED API
     app.post('/jwt',async (req,res)=>{
         const user = req.body;
@@ -395,7 +396,21 @@ async function run() {
         console.log('Property deleted!')
         res.send(result);
       })
-
+      // Verify Property Deal
+      app.patch('/dealCheck',verifyToken,verifyAgent,async (req,res)=>{
+        const deal = req.body;
+        const id = deal.id;
+        const check = deal.check;
+        const query = {_id : new ObjectId(id),status: { $ne: "rejected" }}
+        const updatedProperty = {
+          $set: {
+            status:check,
+          }
+        };
+        const result = await dealsCollection.updateOne(query,updatedProperty);
+        console.log('Property Deal Checked : ',id);
+        res.send(result);
+      })
       // WishList Routes
       // Get All Wishlist
       app.get('/wishlist',async (req,res)=>{
@@ -441,6 +456,10 @@ async function run() {
                             path: "$propertyDetails.agent", 
                             preserveNullAndEmptyArrays: true, 
                           },
+                        },{
+                          $addFields: {
+                            "propertyDetails.wishlistId": "$_id", 
+                          },
                         },
                       ]).toArray();
         }else{
@@ -450,11 +469,72 @@ async function run() {
         res.send({result,count});
       })
       // Add To Wishlist
-      app.post('/wishlist',async (req,res)=>{
-      const wishlisted = req.body;
-      const result = await wishlistCollection.insertOne(wishlisted);
-      res.send(result);
-    })
+      app.post('/wishlist',verifyToken,verifyUser,async (req,res)=>{
+        const wishlisted = req.body;
+        const result = await wishlistCollection.insertOne(wishlisted);
+        res.send(result);
+      })
+    // Delete Wishlist
+      app.delete('/wishlist/:id',verifyToken,verifyUser,async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id)}
+        const result = await wishlistCollection.deleteOne(query);
+        console.log('Wishlist deleted!')
+        res.send(result);
+      })
+    // Make an Offer
+    // Get All Offers
+      app.get('/deals',verifyToken,async (req,res)=>{
+        const email = req.query.email ;
+        const type = req.query.type ;
+        let query ={}
+        if(email!==''){
+          if(type==='user'){query.buyerEmail = email;}else{query.agentEmail = email;}
+        }
+        const result = await dealsCollection.aggregate([
+                        {
+                          $match: query, 
+                        },
+                        {
+                          $addFields: { 
+                            propertyId: { $toObjectId: "$propertyId" },
+                          },
+                        },
+                        {
+                          $lookup: {
+                            from: "properties", 
+                            localField: "propertyId", 
+                            foreignField: "_id",
+                            as: "propertyDetails", 
+                          },
+                        },
+                        {
+                          $unwind: "$propertyDetails", 
+                        },{
+                          $addFields: {
+                            "propertyDetails.dealId": "$_id", 
+                            "propertyDetails.status": "$status", 
+                            "propertyDetails.trId": "$transactionId", 
+                          },
+                        },
+                        {
+                          $project: {
+                            "propertyDetails.deleteUrl": 0,
+                            "propertyDetails.advertisement": 0,
+                          },
+                        },
+                      ]).toArray();
+        const count = await dealsCollection.countDocuments(query);
+        res.send({result,count});
+      })
+    // Add Offer 
+      app.post('/deals',verifyToken,verifyUser,async (req,res)=>{
+        const item = req.body;
+        const property = {...item,status:'pending',flag:0}
+        const result = await dealsCollection.insertOne(property);
+        console.log('New Property Offer Added!');
+        res.send(result);
+      })
     // console.log("MongodB Pinged!");
     
   } finally {
