@@ -6,6 +6,13 @@ const jwt = require('jsonwebtoken');
 // Variables
 const port = process.env.PORT || 3000;
 const secret = process.env.JWTSECRET;
+// Firebase SDK Set
+const admin = require("firebase-admin");
+const serviceAccount = require("./servicekey/phrealstate-firebase-adminsdk-xa9rb-a532980ce6.json");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 // App
 const app = express();
 
@@ -139,9 +146,13 @@ async function run() {
       })
       //Get All Users
       app.get('/users', verifyToken,verifyAdmin, async(req,res)=>{
-          const result = await usersCollection.find().toArray();
-          console.log(`All Users Fetched!`);
-          res.send(result);
+        const page = parseInt(req.query.page) || 0; 
+        const size = parseInt(req.query.size) || 8; 
+        const result = await usersCollection.find().skip(page * size).limit(size).sort({ _id: -1 }).toArray();
+        console.log(`All Users Fetched!`);
+        // For Pagination 
+        const count = await usersCollection.countDocuments();
+        res.send({result,count});
       });
       // Add New User
       app.post('/users',async (req,res)=>{
@@ -233,22 +244,44 @@ async function run() {
         };
         const result = await usersCollection.updateOne(filter,updatedUserInfo);
         console.log(`Updated User to ${role}`);
+        if(role==='fraud'){
+            const agent = await usersCollection.findOne(filter);
+            const deleteProperties = await propertiesCollection.deleteMany({ agentEmail: agent.email });
+            console.log(deleteProperties);
+        }
         res.send(result);
       })
       // Delete User
-      app.delete('/users/:id', verifyToken, verifyAdmin, async (req,res)=>{
-        const id = req.params.id;
-        const query = {_id : new ObjectId(id)}
-        const result = await usersCollection.deleteOne(query);
-        console.log('User deleted!')
-        res.send(result);
-      })
+      app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+        const id = req.params.id; 
+        const email = req.query.email; 
+        console.log(id, email);
+        if (!email) {
+          return res.status(400).json({ error: 'Email is required.' });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        try {
+          const userRecord = await admin.auth().getUserByEmail(email); // Get user by email
+          const uid = userRecord.uid; // Extract UID
+          await admin.auth().deleteUser(uid); // Delete user from Firebase Authentication
+          const message = `User with email ${email} deleted successfully.`;
+          const result = await usersCollection.deleteOne(query);
+          console.log('User deleted!', message);
+          res.send(result);
+        } catch (error) {
+          console.error('Error deleting user:', error.message);
+          res.status(500).json({ error: 'Error deleting user.' });
+        }
+      });
+
       // Property Routes
       // Get All Properies
       app.get('/property',async (req,res)=>{
         const email = req.query.email;
         const page = parseInt(req.query.page) || 0; 
         const size = parseInt(req.query.size) || 12; 
+        const check = req.query.check ;
         const search = req.query.search || '';
         let filter = {};
         if (search.trim() !== '') {
@@ -256,6 +289,9 @@ async function run() {
         }
         if (email !== '') {
           filter.agentEmail = email;
+        }
+        if (check !== '') {
+          filter.status = 'verified';
         }
         const result = await propertiesCollection.aggregate([
                           {
@@ -313,7 +349,13 @@ async function run() {
       // Update Propety
       app.patch('/property/:id', verifyToken, verifyAgent, async (req,res)=>{
         const id = req.params.id;
-        const property = req.body;
+        // Check Owner
+        const checkQuery = {_id : new ObjectId(id)}
+        const checkOwner = await propertiesCollection.findOne(checkQuery);
+        if(checkOwner.agentEmail !== req.decoded.email){
+          return res.status(403).send({message:'Forbidden Access!'})
+        }
+        // 
         const filter = {_id : new ObjectId(id)}
         const updatedProperty = {
           $set: {
@@ -345,7 +387,7 @@ async function run() {
         res.send(result);
       })
       // Delete Property
-      app.delete('/property/:id',async (req,res)=>{
+      app.delete('/property/:id',verifyToken,verifyAgent,async (req,res)=>{
         const id = req.params.id;
         const query = {_id : new ObjectId(id)}
         const result = await propertiesCollection.deleteOne(query);
