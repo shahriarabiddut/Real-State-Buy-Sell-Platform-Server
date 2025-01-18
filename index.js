@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.STRIPESECRET);
 // Variables
 const port = process.env.PORT || 3000;
 const secret = process.env.JWTSECRET;
@@ -45,6 +46,7 @@ async function run() {
     const propertiesCollection = client.db(dbName).collection("properties");
     const wishlistCollection = client.db(dbName).collection("wishlist");
     const dealsCollection = client.db(dbName).collection("propertydeals");
+    const paymentsCollection = client.db(dbName).collection("payments");
     // JWT RELATED API
     app.post('/jwt',async (req,res)=>{
         const user = req.body;
@@ -53,7 +55,7 @@ async function run() {
     })
     // MiddleWares : Verify Token
     const verifyToken = (req,res,next)=>{
-      console.log('Inside Verify token ');
+      // console.log('Inside Verify token ');
       // console.log('Inside Verify token : ',req.headers.authorization);
       if(!req.headers.authorization){
         return res.status(401).send({message:'Unauthorized Access!'})
@@ -397,20 +399,34 @@ async function run() {
         res.send(result);
       })
       // Verify Property Deal
-      app.patch('/dealCheck',verifyToken,verifyAgent,async (req,res)=>{
+      app.patch('/dealCheck', verifyToken, verifyAgent, async (req, res) => {
         const deal = req.body;
         const id = deal.id;
         const check = deal.check;
-        const query = {_id : new ObjectId(id),status: { $ne: "rejected" }}
+        const query = { _id: new ObjectId(id), status: { $ne: "rejected" } };
         const updatedProperty = {
           $set: {
-            status:check,
-          }
+            status: check,
+          },
         };
-        const result = await dealsCollection.updateOne(query,updatedProperty);
-        console.log('Property Deal Checked : ',id);
-        res.send(result);
-      })
+        const result = await dealsCollection.updateOne(query, updatedProperty);
+        console.log('Property Deal Checked: ', id);
+        if (check === 'accepted' && result.modifiedCount > 0) {
+          const acceptedDeal = await dealsCollection.findOne({ _id: new ObjectId(id) });
+        if (acceptedDeal) {
+          const rejectOtherDeals = await dealsCollection.updateMany(
+            {
+              propertyId: acceptedDeal.propertyId, 
+              _id: { $ne: acceptedDeal._id }, 
+            },
+            { $set: { status: 'rejected' } } 
+          );
+          console.log('Rejected Other Deals:', rejectOtherDeals.modifiedCount);
+        }
+      }
+      res.send(result);
+    });
+
       // WishList Routes
       // Get All Wishlist
       app.get('/wishlist',async (req,res)=>{
@@ -484,12 +500,17 @@ async function run() {
       })
     // Make an Offer
     // Get All Offers
-      app.get('/deals',verifyToken,async (req,res)=>{
+      app.get('/deals',async (req,res)=>{
         const email = req.query.email ;
         const type = req.query.type ;
+        const flag = req.query.flag ;
         let query ={}
         if(email!==''){
           if(type==='user'){query.buyerEmail = email;}else{query.agentEmail = email;}
+        }
+        if(flag!==''){
+          query.flag = 1;
+          query.status = 'bought';
         }
         const result = await dealsCollection.aggregate([
                         {
@@ -527,13 +548,59 @@ async function run() {
         const count = await dealsCollection.countDocuments(query);
         res.send({result,count});
       })
+      // Get Deal
+      app.get('/deal/:id',async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id)}
+        const result = await dealsCollection.findOne(query);
+        console.log('Deal Found :',id);
+        res.send(result);
+      })
     // Add Offer 
       app.post('/deals',verifyToken,verifyUser,async (req,res)=>{
         const item = req.body;
-        const property = {...item,status:'pending',flag:0}
+        let status = 'pending';
+        const dealFind = await dealsCollection.findOne({ propertyId: req.body.propertyId,status: { $nin: ['accepted', 'bought'] } });
+        if(dealFind==null){
+          status = 'rejected';
+        }
+        const property = {...item,status:status,flag:0}
         const result = await dealsCollection.insertOne(property);
-        console.log('New Property Offer Added!');
+        console.log('New Property Offer Added!' );
         res.send(result);
+      })
+      // Payment Routes
+      // Payment Intent - Stripe
+      app.post('/create-payment-intent',async(req,res)=>{
+        const {price} = req.body;
+        const amount = parseInt(price / 130);
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount : amount,
+          currency: 'usd',
+          payment_method_types: ['card']
+        })
+        res.send({
+          clientSecret: paymentIntent.client_secret
+        })
+      })
+      //  Save Payments
+      app.post('/payments',verifyToken,async(req,res)=>{
+        const payment = req.body;
+        const transactionId = payment.transactionId; 
+        const dealId = payment.dealId;
+        const result = await paymentsCollection.insertOne(payment);
+        // 
+        const query = { _id: new ObjectId(dealId) };
+        const updatedDeal = {
+          $set: {
+            flag: 1, 
+            transactionId: transactionId, 
+          },
+        };
+        const dealModify = await dealsCollection.updateOne(query, updatedDeal);
+        // 
+        console.log('Payment Saved! ', payment)
+        res.send({result,dealModify});
       })
     // console.log("MongodB Pinged!");
     
