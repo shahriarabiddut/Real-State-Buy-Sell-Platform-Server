@@ -47,6 +47,7 @@ async function run() {
     const wishlistCollection = client.db(dbName).collection("wishlist");
     const dealsCollection = client.db(dbName).collection("propertydeals");
     const paymentsCollection = client.db(dbName).collection("payments");
+    const reviewsCollection = client.db(dbName).collection("reviews");
     // JWT RELATED API
     app.post('/jwt',async (req,res)=>{
         const user = req.body;
@@ -601,6 +602,103 @@ async function run() {
         // 
         console.log('Payment Saved! ', payment)
         res.send({result,dealModify});
+      })
+      // Review Routes
+      // Get All Reviews
+      app.get('/review',async (req,res)=>{
+        const email = req.query.email ;
+        const dashboard = req.query.dashboard ;
+        const id = req.query.id ;
+        let query ={}
+        if(email!=='' && id === ''){
+          query.email = email;
+        }
+        if(id !== ''){
+          query.propertyId = id;
+        }
+        let result = [];
+        const count = await reviewsCollection.countDocuments(query);
+        if(dashboard){
+          result = await reviewsCollection.aggregate([
+                        {
+                          $match: query, 
+                        },
+                        {
+                          $addFields: { 
+                            propertyId: { $toObjectId: "$propertyId" },
+                          },
+                        },
+                        {
+                          $lookup: {
+                            from: "properties", 
+                            localField: "propertyId", 
+                            foreignField: "_id",
+                            as: "propertyDetails", 
+                          },
+                        },
+                        {
+                          $unwind: "$propertyDetails", 
+                        },
+                        {
+                          $lookup: {
+                            from: "users", 
+                            localField: "reviewerEmail", 
+                            foreignField: "email",
+                            as: "reviewer", 
+                          },
+                        },
+                        {
+                          $unwind: "$reviewer", 
+                        },
+                        {
+                          $project:{
+                            _id:1,
+                            propertyId:1,
+                            "reviewer.photo" :1,
+                            reviewerName: 1,
+                            reviewerEmail:1,
+                            description:1,
+                            createdAt:1,
+                            "propertyDetails.title" :1,
+                            "propertyDetails.agentName" :1,
+                          }
+                        }
+                      ]).sort({ _id: -1 }).toArray();
+        }
+        else if(id){
+          console.log('Single Review Called Mode!',query)
+          // Get Specific Property Review
+            result = await reviewsCollection.aggregate([
+                        {
+                          $match: query, 
+                        },
+                        {
+                          $lookup: {
+                            from: "users", 
+                            localField: "reviewerEmail", 
+                            foreignField: "email",
+                            as: "reviewer", 
+                          },
+                        },
+                        {
+                          $unwind: "$reviewer", 
+                        },
+                      ]).sort({ _id: -1 }).toArray();
+                      // console.log(result)
+        }
+        else{
+          result = await reviewsCollection.find(query).toArray();
+          
+        }
+        res.send({result,count});
+      })
+      // Add Review 
+      app.post('/review',verifyToken,verifyUser,async (req,res)=>{
+        const data = req.body;
+        const review = {...data,flag:0}
+        const result = await reviewsCollection.insertOne(review);
+        console.log('New Review Added!');
+        res.send(result);
       })
     // console.log("MongodB Pinged!");
     
