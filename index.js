@@ -297,7 +297,6 @@ async function run() {
         if (location.trim() !== '') {
           filter.location = { $regex: location, $options: 'i' };
         }
-        console.log(minsize)
         if (req.query.minPrice) {
           filter.minPrice = { $gte: parseInt(minPrice)};
         }
@@ -305,6 +304,7 @@ async function run() {
           filter.maxPrice = { $lte: parseInt(maxPrice)};
         }
         if (req.query.minsize) {
+          // console.log(minsize)
           filter.area = { $gte: parseInt(minsize)};
         }
         // 
@@ -317,6 +317,10 @@ async function run() {
         if (adv !== '') {
           filter.advertisement = 1;
           size = 4;
+        }
+        let sortType = { _id: -1 };
+        if (req.query.sort=='1') {
+          sortType = { maxPrice: -1 };
         }
         const result = await propertiesCollection.aggregate([
                           {
@@ -332,7 +336,7 @@ async function run() {
                               _id: 1,title: 1,location: 1,image: 1,minPrice: 1,maxPrice: 1,area: 1,status: 1,agentEmail: 1,agentName: 1,advertisement:1,"agent.photo": 1 
                             }
                           }
-                        ]).skip(page * size).limit(size).sort({ _id: -1 }).toArray();
+                        ]).skip(page * size).limit(size).sort(sortType).toArray();
         // For Pagination 
         const count = await propertiesCollection.countDocuments(filter);
         res.send({result,count});
@@ -462,7 +466,7 @@ async function run() {
         const howMany = await propertiesCollection.countDocuments(queryhowMany);
         let result = []
         if(howMany<4 || check == 0){
-          const query = {_id : new ObjectId(id),status: { $ne: "rejected" }}
+          const query = {_id : new ObjectId(id),status: 'verified'}
           const updatedProperty = {
             $set: {
               advertisement:check,
@@ -608,6 +612,24 @@ async function run() {
         console.log('Deal Found :',id);
         res.send(result);
       })
+      // Get Deals Stats For Agent
+      app.get('/dealStats/:email',async (req,res)=>{
+        const agentEmail = req.params.email;
+        const query = {agentEmail : agentEmail,status: 'bought',flag:1}
+        const result = await dealsCollection.aggregate([
+                                            { $match: query }, 
+                                            {
+                                              $group: {
+                                                _id: null, 
+                                                totalDeals: { $sum: 1 }, 
+                                                totalEarnings: { $sum: "$offerPrice" }, 
+                                              },
+                                            },
+                                          ]).toArray();
+        console.log('Deal Stats For Agent :',agentEmail);
+        res.send(result);
+      })
+
       // Add Offer 
       app.post('/deals',verifyToken,verifyUser,async (req,res)=>{
         const item = req.body;
@@ -772,6 +794,7 @@ async function run() {
         console.log('Review deleted!')
         res.send(result);
       })
+
     // console.log("MongodB Pinged!");
     
   } finally {
