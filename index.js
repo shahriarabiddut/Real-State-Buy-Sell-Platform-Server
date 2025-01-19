@@ -288,11 +288,26 @@ async function run() {
         let size = parseInt(req.query.size) || 12; 
         const check = req.query.check ;
         const adv = req.query.adv ;
-        const search = req.query.search || '';
         let filter = {};
-        if (search.trim() !== '') {
-          filter.location = { $regex: search, $options: 'i' };
+        // Search
+        const location = req.query.location || '';
+        const minPrice = req.query.minPrice || 0;
+        const maxPrice = req.query.maxPrice || 0;
+        const minsize = req.query.minsize || 0;
+        if (location.trim() !== '') {
+          filter.location = { $regex: location, $options: 'i' };
         }
+        console.log(minsize)
+        if (req.query.minPrice) {
+          filter.minPrice = { $gte: parseInt(minPrice)};
+        }
+        if (req.query.maxPrice) {
+          filter.maxPrice = { $lte: parseInt(maxPrice)};
+        }
+        if (req.query.minsize) {
+          filter.area = { $gte: parseInt(minsize)};
+        }
+        // 
         if (email !== '') {
           filter.agentEmail = email;
         }
