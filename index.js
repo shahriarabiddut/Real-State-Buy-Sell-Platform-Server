@@ -553,7 +553,7 @@ async function run() {
       })
     // Make an Offer
     // Get All Offers
-      app.get('/deals',async (req,res)=>{
+      app.get('/deals',verifyToken,async (req,res)=>{
         const email = req.query.email ;
         const type = req.query.type ;
         const flag = req.query.flag ;
@@ -605,7 +605,7 @@ async function run() {
         res.send({result,count});
       })
       // Get Deal
-      app.get('/deal/:id',async (req,res)=>{
+      app.get('/deal/:id',verifyToken,async (req,res)=>{
         const id = req.params.id;
         const query = {_id : new ObjectId(id)}
         const result = await dealsCollection.findOne(query);
@@ -613,7 +613,7 @@ async function run() {
         res.send(result);
       })
       // Get Deals Stats For Agent
-      app.get('/dealStats/:email',async (req,res)=>{
+      app.get('/dealStats/:email',verifyToken, verifyAgent,async (req,res)=>{
         const agentEmail = req.params.email;
         const query = {agentEmail : agentEmail,status: 'bought',flag:1}
         const result = await dealsCollection.aggregate([
@@ -794,7 +794,62 @@ async function run() {
         console.log('Review deleted!')
         res.send(result);
       })
-
+      // Agent Stats - For Dashboard
+      app.get('/agentStats/:email',verifyToken,verifyAgent,async (req,res)=>{
+        const agentEmail = req.params.email;
+        const query = {agentEmail : agentEmail,status: 'bought',flag:1}
+        const result = await dealsCollection.aggregate([
+                                            { $match: query }, 
+                                            {
+                                              $group: {
+                                                _id: null, 
+                                                totalDeals: { $sum: 1 }, 
+                                                totalEarnings: { $sum: "$offerPrice" }, 
+                                              },
+                                            },
+                                          ]).toArray();
+          const totalProperty = await propertiesCollection.countDocuments({ agentEmail });
+          const pendingOffers = await dealsCollection.countDocuments({ agentEmail,status: 'pending' });
+          const totalDeals = result[0]?.totalDeals || 0;
+          const totalEarnings = result[0]?.totalEarnings || 0;
+          const stats = {totalDeals,totalEarnings,totalProperty,pendingOffers}
+          console.log('Agent Stats :',agentEmail);
+        res.send(stats);
+      })
+      // User Stats - For Dashboard
+      app.get('/userStats/:email',verifyToken,verifyUser,async (req,res)=>{
+        const email = req.params.email;
+        const wishlistCount = await wishlistCollection.countDocuments({ email }); 
+        const reviewsCount = await reviewsCollection.countDocuments({ reviewerEmail: email });
+        const dealsStats = await dealsCollection.aggregate([
+                                            { $match: { buyerEmail: email } }, 
+                                            {
+                                              $facet: {
+                                                dealsOffered: [{ $count: "count" }], 
+                                                totalSpent: [
+                                                  { $match: { status: "bought" } }, 
+                                                  { $group: { _id: null, totalSpent: { $sum: "$offerPrice" } } }, 
+                                                ],
+                                              },
+                                            },
+                                          ]).toArray();
+        const dealsOffered = dealsStats[0]?.dealsOffered[0]?.count || 0;
+        const totalSpent = dealsStats[0]?.totalSpent[0]?.totalSpent || 0;
+        const stats = {wishlistCount,reviewsCount,dealsOffered,totalSpent}
+        console.log('User Stats :',email);
+        res.send(stats);
+      })
+      // Admin Stats - For Dashboard
+      app.get('/adminStats/:email',verifyToken,verifyAdmin,async (req,res)=>{
+        const email = req.params.email;
+        const userCount = await wishlistCollection.countDocuments(); 
+        const reviewsCount = await reviewsCollection.countDocuments();
+        const propertiesCount = await propertiesCollection.countDocuments({status:'verified'});
+        const paymentCount = await paymentsCollection.countDocuments();
+        const stats = {userCount,reviewsCount,propertiesCount,paymentCount}
+        console.log('User Stats :',email);
+        res.send(stats);
+      })
     // console.log("MongodB Pinged!");
     
   } finally {
