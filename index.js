@@ -152,7 +152,7 @@ async function run() {
       //Get All Users
       app.get('/users', verifyToken,verifyAdmin, async(req,res)=>{
         const page = parseInt(req.query.page) || 0; 
-        const size = parseInt(req.query.size) || 8; 
+        const size = parseInt(req.query.size) || 12; 
         const result = await usersCollection.find().skip(page * size).limit(size).sort({ _id: -1 }).toArray();
         console.log(`All Users Fetched!`);
         // For Pagination 
@@ -285,8 +285,9 @@ async function run() {
       app.get('/property',async (req,res)=>{
         const email = req.query.email;
         const page = parseInt(req.query.page) || 0; 
-        const size = parseInt(req.query.size) || 12; 
+        let size = parseInt(req.query.size) || 12; 
         const check = req.query.check ;
+        const adv = req.query.adv ;
         const search = req.query.search || '';
         let filter = {};
         if (search.trim() !== '') {
@@ -297,6 +298,10 @@ async function run() {
         }
         if (check !== '') {
           filter.status = 'verified';
+        }
+        if (adv !== '') {
+          filter.advertisement = 1;
+          size = 4;
         }
         const result = await propertiesCollection.aggregate([
                           {
@@ -309,8 +314,7 @@ async function run() {
                           }, {$unwind:'$agent'},
                           {
                             $project: {
-                              _id: 1,title: 1,location: 1,image: 1,minPrice: 1,maxPrice: 1,area: 1,status: 1,agentEmail: 1,agentName: 1,
-                              "agent.photo": 1 
+                              _id: 1,title: 1,location: 1,image: 1,minPrice: 1,maxPrice: 1,area: 1,status: 1,agentEmail: 1,agentName: 1,advertisement:1,"agent.photo": 1 
                             }
                           }
                         ]).skip(page * size).limit(size).sort({ _id: -1 }).toArray();
@@ -422,17 +426,46 @@ async function run() {
             },
             { $set: { status: 'rejected' } } 
           );
-          console.log('Rejected Other Deals:', rejectOtherDeals.modifiedCount);
+          // If Advertised then remove advertise
+          const upPropertyAdStatus = {
+            $set: {
+              advertisement: 0,
+            },
+          };
+          const removeAd = await propertiesCollection.updateOne({ _id: new ObjectId(acceptedDeal.propertyId) },upPropertyAdStatus);
+          console.log('If Advertised then remove advertise,Rejected Other Deals:', rejectOtherDeals.modifiedCount);
         }
       }
       res.send(result);
-    });
+      });
+      // Advertise - Remove Advertise Property
+      app.patch('/propertyAdvertise',verifyToken,verifyAdmin,async (req,res)=>{
+        const pro = req.body;
+        const id = pro.id;
+        const check = pro.check!='rejected'?1:0;
+        const queryhowMany = {advertisement:1};
+        const howMany = await propertiesCollection.countDocuments(queryhowMany);
+        let result = []
+        if(howMany<4 || check == 0){
+          const query = {_id : new ObjectId(id),status: { $ne: "rejected" }}
+          const updatedProperty = {
+            $set: {
+              advertisement:check,
+            }
+          };
+          result = await propertiesCollection.updateOne(query,updatedProperty);
+          console.log('Property Added For Advertisement : ',id);
+        }
+        res.send(result);
+      })
 
       // WishList Routes
       // Get All Wishlist
       app.get('/wishlist',async (req,res)=>{
         const email = req.query.email ;
         const dashboard = req.query.dashboard ;
+        const page = parseInt(req.query.page) || 0; 
+        const size = parseInt(req.query.size) || 12; 
         let query ={}
         if(email!==''){
           query.email = email;
@@ -478,9 +511,9 @@ async function run() {
                             "propertyDetails.wishlistId": "$_id", 
                           },
                         },
-                      ]).toArray();
+                      ]).skip(page * size).limit(size).toArray();
         }else{
-          result = await wishlistCollection.find(query).toArray();
+          result = await wishlistCollection.find(query).skip(page * size).limit(size).toArray();
           
         }
         res.send({result,count});
@@ -505,6 +538,9 @@ async function run() {
         const email = req.query.email ;
         const type = req.query.type ;
         const flag = req.query.flag ;
+        
+        const page = parseInt(req.query.page) || 0; 
+        const size = parseInt(req.query.size) || 12; 
         let query ={}
         if(email!==''){
           if(type==='user'){query.buyerEmail = email;}else{query.agentEmail = email;}
@@ -545,7 +581,7 @@ async function run() {
                             "propertyDetails.advertisement": 0,
                           },
                         },
-                      ]).toArray();
+                      ]).skip(page * size).limit(size).toArray();
         const count = await dealsCollection.countDocuments(query);
         res.send({result,count});
       })
@@ -557,7 +593,7 @@ async function run() {
         console.log('Deal Found :',id);
         res.send(result);
       })
-    // Add Offer 
+      // Add Offer 
       app.post('/deals',verifyToken,verifyUser,async (req,res)=>{
         const item = req.body;
         let status = 'pending';
@@ -612,6 +648,8 @@ async function run() {
         const email = req.query.email ;
         const dashboard = req.query.dashboard ;
         const id = req.query.id ;
+        const page = parseInt(req.query.page) || 0; 
+        const size = parseInt(req.query.size) || 12; 
         let query ={}
         if(email!=='' && id === ''){
           query.reviewerEmail = email;
@@ -666,7 +704,7 @@ async function run() {
                             "propertyDetails.agentName" :1,
                           }
                         }
-                      ]).sort({ _id: -1 }).toArray();
+                      ]).skip(page * size).limit(size).sort({ _id: -1 }).toArray();
         }
         else if(id){
           console.log('Single Review Called Mode!',query)
@@ -686,11 +724,11 @@ async function run() {
                         {
                           $unwind: "$reviewer", 
                         },
-                      ]).sort({ _id: -1 }).toArray();
+                      ]).skip(page * size).limit(size).sort({ _id: -1 }).toArray();
                       // console.log(result)
         }
         else{
-          result = await reviewsCollection.find(query).toArray();
+          result = await reviewsCollection.find(query).skip(page * size).limit(size).toArray();
           
         }
         res.send({result,count});
