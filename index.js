@@ -279,7 +279,52 @@ async function run() {
           res.status(500).json({ error: 'Error deleting user.' });
         }
       });
-
+      //Get All Agents
+      app.get('/agents', async(req,res)=>{
+        const page = parseInt(req.query.page) || 0; 
+        const size = parseInt(req.query.size) || 12; 
+        const result = await usersCollection.aggregate([
+                                            {
+                                              $match: { role: "agent" }, 
+                                            },
+                                            {
+                                              $lookup: {
+                                                from: "properties",
+                                                localField: "email",
+                                                foreignField: "agentEmail", 
+                                                as: "properties",
+                                              },
+                                            },
+                                            {
+                                              $addFields: {
+                                                propertyCount: { $size: "$properties" },
+                                              },
+                                            },
+                                            {
+                                              $sort: { propertyCount: -1 },
+                                            },
+                                            {
+                                              $skip: page * size, 
+                                            },
+                                            {
+                                              $limit: size, 
+                                            },
+                                            {
+                                              $project: {
+                                                name: 1,
+                                                email: 1,
+                                                role: 1,
+                                                photo: 1,
+                                                propertyCount: 1,
+                                              },
+                                            },
+                                          ]).toArray();
+        console.log(`All Agents Fetched!`);
+        // For Pagination 
+        const count = await usersCollection.countDocuments({role:'agent'});
+        res.send({result,count});
+      });
+      // Get Popular City Properties
       // Property Routes
       // Get All Properies
       app.get('/property',async (req,res)=>{
@@ -477,7 +522,23 @@ async function run() {
         }
         res.send(result);
       })
-
+      //Get Popular City Properties Count
+      app.get('/popularcity', async(req,res)=>{
+        try{
+        const locations = ["dhaka", "rajshahi", "khulna"];
+        const locationCounts = await Promise.all(
+          locations.map(async (location) => {
+            const filter = { location: { $regex: location, $options: 'i' } };
+            const count = await propertiesCollection.countDocuments(filter);
+            return { name: location, properties: count };
+          })
+          );
+          res.send(locationCounts);
+          } catch (error) {
+            console.error("Error fetching popular city properties count:", error);
+            res.status(500).json({ error: "Internal server error" });
+          }
+      });
       // WishList Routes
       // Get All Wishlist
       app.get('/wishlist',async (req,res)=>{
