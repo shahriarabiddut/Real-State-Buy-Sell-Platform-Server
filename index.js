@@ -575,6 +575,9 @@ async function run() {
       app.post('/create-payment-intent',async(req,res)=>{
         const {price} = req.body;
         const amount = parseInt(price / 130);
+        // BDT to USDT
+        // Right: Should have divided by 1.3 ! 
+        // Wrong: But It might cross the limit! so divided by 130 ! 
         const paymentIntent = await stripe.paymentIntents.create({
           amount : amount,
           currency: 'usd',
@@ -611,7 +614,7 @@ async function run() {
         const id = req.query.id ;
         let query ={}
         if(email!=='' && id === ''){
-          query.email = email;
+          query.reviewerEmail = email;
         }
         if(id !== ''){
           query.propertyId = id;
@@ -698,6 +701,22 @@ async function run() {
         const review = {...data,flag:0}
         const result = await reviewsCollection.insertOne(review);
         console.log('New Review Added!');
+        res.send(result);
+      })
+      // Delete Review - User
+      app.delete('/review/:id',verifyToken,verifyUser,async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id)}
+        const result = await reviewsCollection.deleteOne(query);
+        console.log('Review deleted!')
+        res.send(result);
+      })
+      // Delete Review - Admin
+      app.delete('/reviewA/:id',verifyToken,verifyAdmin,async (req,res)=>{
+        const id = req.params.id;
+        const query = {_id : new ObjectId(id)}
+        const result = await reviewsCollection.deleteOne(query);
+        console.log('Review deleted!')
         res.send(result);
       })
     // console.log("MongodB Pinged!");
