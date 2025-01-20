@@ -612,9 +612,9 @@ async function run() {
         console.log('Wishlist deleted!')
         res.send(result);
       })
-    // Make an Offer
+    // Offer Routes
     // Get All Offers
-      app.get('/deals',verifyToken,async (req,res)=>{
+      app.get('/deals',async (req,res)=>{
         const email = req.query.email ;
         const type = req.query.type ;
         const flag = req.query.flag ;
@@ -651,6 +651,7 @@ async function run() {
                         },{
                           $addFields: {
                             "propertyDetails.dealId": "$_id", 
+                            "propertyDetails.offerPrice": "$offerPrice", 
                             "propertyDetails.status": "$status", 
                             "propertyDetails.trId": "$transactionId", 
                           },
@@ -666,7 +667,7 @@ async function run() {
         res.send({result,count});
       })
       // Get Deal
-      app.get('/deal/:id',verifyToken,async (req,res)=>{
+      app.get('/deal/:id',async (req,res)=>{
         const id = req.params.id;
         const query = {_id : new ObjectId(id)}
         const result = await dealsCollection.findOne(query);
@@ -699,9 +700,10 @@ async function run() {
         if(dealFind==null){
           status = 'rejected';
         }
+        console.log(dealFind);
         const property = {...item,status:status,flag:0}
         const result = await dealsCollection.insertOne(property);
-        console.log('New Property Offer Added!' );
+        console.log('New Property Offer Added!',status );
         res.send(result);
       })
       // Payment Routes
@@ -726,19 +728,27 @@ async function run() {
         const payment = req.body;
         const transactionId = payment.transactionId; 
         const dealId = payment.dealId;
+        const propertyId = payment.propertyId;
         const result = await paymentsCollection.insertOne(payment);
         // 
         const query = { _id: new ObjectId(dealId) };
         const updatedDeal = {
           $set: {
-            flag: 1, 
-            transactionId: transactionId, 
+            flag: 1,transactionId: transactionId, status:'bought'
           },
         };
         const dealModify = await dealsCollection.updateOne(query, updatedDeal);
         // 
+        const queryProperty = { _id: new ObjectId(propertyId) };
+        const updatedProperty = {
+          $set: {
+            flag: 1,advertisement: 0, status:'sold'
+          },
+        };
+        const propertyModify = await propertiesCollection.updateOne(queryProperty, updatedProperty);
+        // 
         console.log('Payment Saved! ', payment)
-        res.send({result,dealModify});
+        res.send({result,dealModify,propertyModify});
       })
       // Review Routes
       // Get All Reviews
@@ -801,8 +811,11 @@ async function run() {
                             "propertyDetails.title" :1,
                             "propertyDetails.agentName" :1,
                           }
-                        }
-                      ]).skip(page * size).limit(size).sort({ _id: -1 }).toArray();
+                          },
+                          {
+                            $sort: { _id: -1 }
+                          },
+                      ]).skip(page * size).limit(size).toArray();
         }
         else if(id){
           console.log('Single Review Called Mode!',query)
@@ -826,7 +839,7 @@ async function run() {
                       // console.log(result)
         }
         else{
-          result = await reviewsCollection.find(query).skip(page * size).limit(size).toArray();
+          result = await reviewsCollection.find(query).skip(page * size).limit(size).sort({ _id: -1 }).toArray();
           
         }
         res.send({result,count});
