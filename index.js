@@ -10,9 +10,15 @@ const secret = process.env.JWTSECRET;
 // Firebase SDK Set
 const admin = require("firebase-admin");
 const serviceAccount = require("./servicekey/phrealstate-firebase-adminsdk-xa9rb-a532980ce6.json");
+const { default: axios } = require('axios');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
+// SSl Commerz Credentials 
+
+const store_id = process.env.store_id
+const store_passwd = process.env.store_passwd
+const is_live = false //true for live, false for sandbox
 
 // App
 const app = express();
@@ -20,6 +26,7 @@ const app = express();
 // middleware
 app.use(cors())
 app.use(express.json())
+app.use(express.urlencoded())
 
 // Database
 const dbName = process.env.DB_NAME;
@@ -707,6 +714,17 @@ async function run() {
         res.send(result);
       })
       // Payment Routes
+      //Get All Payments
+      // app.get('/payments',verifyToken, async(req,res)=>{
+      app.get('/payments', async(req,res)=>{
+        const page = parseInt(req.query.page) || 0; 
+        const size = parseInt(req.query.size) || 12; 
+        const result = await paymentsCollection.find().skip(page * size).limit(size).sort({ _id: -1 }).toArray();
+        console.log(`All Payments Fetched!`);
+        // For Pagination 
+        const count = await usersCollection.countDocuments();
+        res.send({result,count});
+      });
       // Payment Intent - Stripe
       app.post('/create-payment-intent',async(req,res)=>{
         const {price} = req.body;
@@ -723,7 +741,113 @@ async function run() {
           clientSecret: paymentIntent.client_secret
         })
       })
-      //  Save Payments
+      // Payment Intent - Stripe
+      app.post('/create-ssl-payment',async(req,res)=>{
+        const deal = req.body;
+        const trxId = new ObjectId().toString();
+        const dataCol = {
+          store_id: store_id,
+          store_passwd: store_passwd,
+          total_amount: deal.offerPrice,
+          currency: 'BDT',
+          tran_id: trxId, // use unique tran_id for each api call
+          success_url: `${process.env.SERVER_URL}/success-payment`,
+          fail_url: `${process.env.FRONTEND_URL}/dashboard/payment/failed`,
+          cancel_url: `${process.env.FRONTEND_URL}/dashboard/payment/cancelled`,
+          ipn_url: `${process.env.SERVER_URL}/ipn-payment`,
+          shipping_method: 'Courier',
+          product_name: 'Computer.',
+          product_category: 'Property',
+          product_profile: 'general',
+          cus_name: deal.buyerName,
+          cus_email:  deal.buyerEmail,
+          cus_add1: 'NotMentioned',
+          cus_add2: 'NotMentioned',
+          cus_city: 'NotMentioned',
+          cus_state: 'NotMentioned',
+          cus_postcode: 'NotMentioned',
+          cus_country: 'Bangladesh',
+          cus_phone: 'NotMentioned',
+          cus_fax: 'NotMentioned',
+          ship_name: deal.buyerName,
+          ship_add1: 'NotMentioned',
+          ship_add2: 'NotMentioned',
+          ship_city: 'NotMentioned',
+          ship_state: 'NotMentioned',
+          ship_postcode: 'NotMentioned',
+          ship_country: 'Bangladesh',
+        };
+        const iniResponse = await axios({
+          url : `https://sandbox.sslcommerz.com/gwprocess/v4/api.php`,
+          method: 'POST',
+          data: dataCol,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
+        })
+        const payment = {
+          email: deal.buyerEmail || "Anonymous",
+          price: deal.offerPrice,
+          transactionId: trxId,
+          date: new Date(), 
+          dealId: deal._id,
+          propertyId: deal.propertyId,
+          status: "Pending",
+          method: "sslCommerz",
+        };
+        const savePayment = await paymentsCollection.insertOne(payment)
+        const getwayUrl = iniResponse?.data?.GatewayPageURL;
+        // console.log('iniResponse : ',iniResponse);
+        // console.log('getwayUrl : ',getwayUrl);
+        res.send({ getwayUrl });
+      })
+      //  Save Payments - SSL Commerz
+      app.post('/success-payment',async(req,res)=>{
+        const successPayment = req.body;
+        // console.log('Payment Saved! ', successPayment)
+        if(successPayment.val_id){
+          const isValidPayment = await axios.get(`https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${successPayment.val_id}&store_id=${store_id}&store_passwd=${store_passwd}`)
+          console.log('Payment Valid or Not! ', isValidPayment.data.status)
+          if(isValidPayment?.data?.status !== 'VALID'){
+            res.status(403).send("Invalid Payment.");
+          }else{
+            const payment = isValidPayment?.data;
+            const transactionId = payment.tran_id;
+            const paymentDocument = await paymentsCollection.findOne({ transactionId: transactionId }); 
+            // Get Deal and Property Daya
+            const dealId = paymentDocument.dealId;
+            const propertyId = paymentDocument.propertyId;
+            // Update Payment
+            const result = await paymentsCollection.updateOne({ transactionId: transactionId },{$set:{
+              status : 'SUCCESS',card_type: payment.card_type,
+            }});
+            // 
+            const query = { _id: new ObjectId(dealId) };
+            const updatedDeal = {
+              $set: {
+                flag: 1,transactionId: transactionId, status:'bought'
+              },
+            };
+            const dealModify = await dealsCollection.updateOne(query, updatedDeal);
+            // 
+            const queryProperty = { _id: new ObjectId(propertyId) };
+            const updatedProperty = {
+              $set: {
+                flag: 1,advertisement: 0, status:'sold'
+              },
+            };
+            const propertyModify = await propertiesCollection.updateOne(queryProperty, updatedProperty);
+            
+            // console.log('Payment Valid! ', result,dealModify,propertyModify)
+            // res.send({result,dealModify,propertyModify});
+            res.redirect(`${process.env.FRONTEND_URL}/dashboard/payment/success`)
+          }
+        }
+        else {
+          res.status(404).send("The resource you are looking for does not exist.");
+        }
+      })
+      //  Save Payments - Stripe
       app.post('/payments',verifyToken,async(req,res)=>{
         const payment = req.body;
         const transactionId = payment.transactionId; 
@@ -750,6 +874,25 @@ async function run() {
         console.log('Payment Saved! ', payment)
         res.send({result,dealModify,propertyModify});
       })
+      // Update all payments
+      app.get('/update-all-payments', async (req, res) => {
+        try {
+          const updateResult = await paymentsCollection.updateMany(
+            {},
+            {
+              $set: {
+                status: "SUCCESS",
+                method: "stripe",
+              },
+            }
+          );
+
+          res.status(200).json({message: 'All payments updated successfully',});
+        } catch (error) {
+          console.error('Error updating all payments:', error);
+          res.status(500).json({ message: 'Failed to update payments', error });
+        }
+      });
       // Review Routes
       // Get All Reviews
       app.get('/review',async (req,res)=>{
