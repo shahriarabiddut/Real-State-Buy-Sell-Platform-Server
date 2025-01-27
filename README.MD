@@ -48,6 +48,17 @@ By combining intuitive features with robust management tools, the platform ensur
 # Generate Secret
 type node then enter then : `require('crypto').randomBytes(64).toString('hex')`
 
+## Instructions for Running the Project Locally
+### Backend (Query-Server)
+1.**Install the dependencies:**
+-   `npm install`
+2. **Set up environment variables:**
+-   Create a .env file in the query-server directory.Add your Credentials Here. simillar to .env.example.
+3. **Start the backend server:**
+-   `npm run start` or install nodemon globally!
+4. **Verify the server is running:**
+The backend server will be accessible at http://localhost:5000 (http://localhost:port)
+
 # About
 
 -   Admin email: admin@gmail.com
@@ -55,5 +66,3 @@ type node then enter then : `require('crypto').randomBytes(64).toString('hex')`
 -   Agent email: agent@gmail.com
 -   Agent password: agent@gmail.comA1
 -   Front-end Live Site Link: phrealstate.web.app
--   Client Side Github Repository Link: https://github.com/Programming-Hero-Web-Course4/b10a12-client-side-shahriarabiddut
--   Server Side Github Repository Link: https://github.com/Programming-Hero-Web-Course4/b10a12-server-side-shahriarabiddut
