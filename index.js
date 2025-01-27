@@ -696,11 +696,11 @@ async function run() {
       app.post('/deals',verifyToken,verifyUser,async (req,res)=>{
         const item = req.body;
         let status = 'pending';
-        const dealFind = await dealsCollection.findOne({ propertyId: req.body.propertyId,status: { $nin: ['accepted', 'bought'] } });
-        if(dealFind==null){
+        const dealFind = await dealsCollection.findOne({ propertyId: req.body.propertyId,status: { $in: ['accepted', 'bought'] } });
+        if(dealFind){
           status = 'rejected';
         }
-        console.log(dealFind);
+        // console.log(dealFind);
         const property = {...item,status:status,flag:0}
         const result = await dealsCollection.insertOne(property);
         console.log('New Property Offer Added!',status );
